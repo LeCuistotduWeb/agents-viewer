@@ -12,9 +12,9 @@
 import * as os from 'os';
 import * as path from 'path';
 import {
-  AgentDef, Provider, ProviderContext, RunState, SessionInfo, SubAgentRun,
-  cached, cleanTitle, dedupeAgents, exists, expandHome, isHumanText, parseTomlStrings,
-  readAgentDir, readDirSafe, readJsonl, statSafe, toDate,
+  AgentDef, Provider, ProviderContext, RunState, SessionInfo, SubAgentRun, TokenUsage,
+  cached, cleanTitle, dedupeAgents, exists, expandHome, hasUsage, isHumanText, parseTomlStrings,
+  readAgentDir, readDirSafe, readJsonl, statSafe, toCount, toDate,
 } from '../model';
 
 const BUILTIN: AgentDef[] = [
@@ -35,6 +35,7 @@ interface Parsed {
   aborted: boolean;
   startedAt?: Date;
   endedAt?: Date;
+  usage: TokenUsage;        // dernier total cumulé vu (event_msg token_count)
   spawns: SubAgentRun[];
 }
 
@@ -45,7 +46,7 @@ function textOf(content: unknown): string {
 }
 
 function parse(file: string): Parsed {
-  const p: Parsed = { title: '', busy: false, aborted: false, spawns: [] };
+  const p: Parsed = { title: '', busy: false, aborted: false, usage: { input: 0, output: 0, cacheRead: 0, cacheCreate: 0, thinking: 0 }, spawns: [] };
   const spawns = new Map<string, SubAgentRun>();
   let metaSeen = false;
   let userMsg = '';
@@ -71,6 +72,17 @@ function parse(file: string): Parsed {
       if (pl.type === 'task_started') { p.busy = true; p.aborted = false; }
       if (pl.type === 'task_complete') { p.busy = false; p.endedAt = ts; }
       if (pl.type === 'turn_aborted') { p.busy = false; p.aborted = true; p.endedAt = ts; }
+      if (pl.type === 'token_count') {
+        // Codex journalise un total cumulé à chaque tour : le dernier gagne.
+        const u = pl.info?.total_token_usage ?? pl.total_token_usage ?? pl.info ?? {};
+        p.usage = {
+          input: toCount(u.input_tokens),
+          output: toCount(u.output_tokens),
+          cacheRead: toCount(u.cached_input_tokens),
+          cacheCreate: 0,
+          thinking: toCount(u.reasoning_output_tokens),
+        };
+      }
       continue;
     }
 
@@ -195,6 +207,7 @@ export function codexProvider(dirOverride?: string): Provider {
           lastActivity: new Date(lastWrite),
           state: fresh(lastWrite) || runs.some(x => x.state === 'running') ? 'running' : 'idle',
           model: r.p.model,
+          usage: hasUsage(r.p.usage) ? r.p.usage : undefined,
           subAgents: runs,
         });
       }

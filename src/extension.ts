@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { AgentDef, PROVIDER_LABEL, ProviderId, RunState, SessionInfo, SubAgentRun } from './model';
+import { AgentDef, PROVIDER_LABEL, ProviderId, RunState, SessionInfo, SubAgentRun, TokenUsage, formatTokens } from './model';
 import { ALL_PROVIDERS, Snapshot, buildProviders, collect } from './providers';
 import { GraphPanel } from './graphPanel';
 
@@ -59,6 +59,13 @@ function relativeTime(d: Date, now = Date.now()): string {
 
 function openCommand(file: string): vscode.Command {
   return { command: 'agentViewer.openFile', title: vscode.l10n.t('Open'), arguments: [file] };
+}
+
+function formatUsage(u: TokenUsage): string {
+  let s = vscode.l10n.t('{0} in · {1} out · {2} cached',
+    formatTokens(u.input), formatTokens(u.output), formatTokens(u.cacheRead + u.cacheCreate));
+  if (u.thinking > 0) { s += ' · ' + vscode.l10n.t('{0} thinking', formatTokens(u.thinking)); }
+  return s;
 }
 
 // ---------------------------------------------------------------- vue « Agents disponibles »
@@ -174,6 +181,7 @@ class SessionsProvider implements vscode.TreeDataProvider<SessionNode> {
       md.appendText(s.title);
       md.appendMarkdown(`\n\n- ${vscode.l10n.t('Project')}: \`${s.project}\`\n- ${vscode.l10n.t('Session')}: \`${s.sessionId}\`\n`);
       if (s.model) { md.appendMarkdown(`- ${vscode.l10n.t('Model')}: ${s.model}\n`); }
+      if (s.usage) { md.appendMarkdown(`- ${vscode.l10n.t('Tokens')}: ${formatUsage(s.usage)}\n`); }
       md.appendMarkdown(`- ${vscode.l10n.t('Last activity')}: ${s.lastActivity.toLocaleString(vscode.env.language)}`);
       item.tooltip = md;
       item.command = openCommand(s.file);
