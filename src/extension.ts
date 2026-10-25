@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { AgentDef, PROVIDER_LABEL, ProviderId, RunState, SessionInfo, SubAgentRun, timeAgo } from './model';
+import { AgentDef, PROVIDER_LABEL, ProviderId, RunState, SessionInfo, SubAgentRun } from './model';
 import { ALL_PROVIDERS, Snapshot, buildProviders, collect } from './providers';
 import { GraphPanel } from './graphPanel';
 
@@ -29,13 +29,36 @@ function stateIcon(state: RunState): vscode.ThemeIcon {
   }
 }
 
-const STATE_LABEL: Record<RunState, string> = {
-  running: 'en cours', idle: 'inactif', done: 'terminé', error: 'erreur', interrupted: 'interrompu',
-};
-const SOURCE_LABEL: Record<AgentDef['source'], string> = { project: 'projet', user: 'perso', builtin: 'intégré' };
+function stateLabel(state: RunState): string {
+  switch (state) {
+    case 'running': return vscode.l10n.t('running');
+    case 'idle': return vscode.l10n.t('idle');
+    case 'done': return vscode.l10n.t('done');
+    case 'error': return vscode.l10n.t('error');
+    case 'interrupted': return vscode.l10n.t('interrupted');
+  }
+}
+function sourceLabel(source: AgentDef['source']): string {
+  switch (source) {
+    case 'project': return vscode.l10n.t('project');
+    case 'user': return vscode.l10n.t('personal');
+    case 'builtin': return vscode.l10n.t('built-in');
+  }
+}
+
+/** Durée relative (« 5 min ago » / « il y a 5 min ») selon la langue de VS Code. */
+const rtf = new Intl.RelativeTimeFormat(vscode.env.language, { numeric: 'auto', style: 'short' });
+function relativeTime(d: Date, now = Date.now()): string {
+  const s = Math.round((d.getTime() - now) / 1000);
+  const abs = Math.abs(s);
+  if (abs < 60) { return rtf.format(s, 'second'); }
+  if (abs < 3600) { return rtf.format(Math.round(s / 60), 'minute'); }
+  if (abs < 172800) { return rtf.format(Math.round(s / 3600), 'hour'); }
+  return rtf.format(Math.round(s / 86400), 'day');
+}
 
 function openCommand(file: string): vscode.Command {
-  return { command: 'agentViewer.openFile', title: 'Ouvrir', arguments: [file] };
+  return { command: 'agentViewer.openFile', title: vscode.l10n.t('Open'), arguments: [file] };
 }
 
 // ---------------------------------------------------------------- vue « Agents disponibles »
@@ -86,10 +109,10 @@ class AgentsProvider implements vscode.TreeDataProvider<AgentNode> {
     const a = node.agent;
     const item = new vscode.TreeItem(a.name, vscode.TreeItemCollapsibleState.None);
     item.iconPath = node.running ? SPIN() : new vscode.ThemeIcon('hubot');
-    item.description = [node.running ? `${node.running} en cours` : SOURCE_LABEL[a.source], a.model ?? ''].filter(Boolean).join(' · ');
-    const md = new vscode.MarkdownString(`**${a.name}** — ${PROVIDER_LABEL[a.provider]}\n\n${a.description || '_Pas de description_'}`);
-    if (a.model) { md.appendMarkdown(`\n\n**Modèle :** ${a.model}`); }
-    if (a.tools) { md.appendMarkdown(`\n\n**Outils :** ${a.tools}`); }
+    item.description = [node.running ? vscode.l10n.t('{0} running', node.running) : sourceLabel(a.source), a.model ?? ''].filter(Boolean).join(' · ');
+    const md = new vscode.MarkdownString(`**${a.name}** — ${PROVIDER_LABEL[a.provider]}\n\n${a.description || '_' + vscode.l10n.t('No description') + '_'}`);
+    if (a.model) { md.appendMarkdown(`\n\n**${vscode.l10n.t('Model:')}** ${a.model}`); }
+    if (a.tools) { md.appendMarkdown(`\n\n**${vscode.l10n.t('Tools:')}** ${a.tools}`); }
     md.isTrusted = false;
     item.tooltip = md;
     if (a.file) { item.command = openCommand(a.file); }
@@ -116,7 +139,7 @@ class SessionsProvider implements vscode.TreeDataProvider<SessionNode> {
     if (!node) {
       return this.sessions.length
         ? this.sessions.map(session => ({ kind: 'session' as const, session }))
-        : [{ kind: 'empty', text: 'Aucune session d’agent récente' }];
+        : [{ kind: 'empty', text: vscode.l10n.t('No recent agent session') }];
     }
     if (node.kind === 'session') {
       return [...node.session.subAgents].reverse().map(run => ({ kind: 'run' as const, run }));
@@ -142,16 +165,16 @@ class SessionsProvider implements vscode.TreeDataProvider<SessionNode> {
       item.iconPath = s.state === 'running' ? SPIN() : new vscode.ThemeIcon('comment-discussion');
       item.description = [
         PROVIDER_LABEL[s.provider],
-        s.state === 'running' ? 'actif' : timeAgo(s.lastActivity),
-        s.subAgents.length ? `${running}/${s.subAgents.length} sous-agents` : '',
+        s.state === 'running' ? vscode.l10n.t('active') : relativeTime(s.lastActivity),
+        s.subAgents.length ? vscode.l10n.t('{0}/{1} sub-agents', running, s.subAgents.length) : '',
         this.showProject ? path.basename(s.project) : '',
       ].filter(Boolean).join(' · ');
       const md = new vscode.MarkdownString();
-      md.appendMarkdown(`**${PROVIDER_LABEL[s.provider]}** — orchestrateur ${STATE_LABEL[s.state]}\n\n`);
+      md.appendMarkdown(`**${PROVIDER_LABEL[s.provider]}** — ${vscode.l10n.t('orchestrator {0}', stateLabel(s.state))}\n\n`);
       md.appendText(s.title);
-      md.appendMarkdown(`\n\n- Projet : \`${s.project}\`\n- Session : \`${s.sessionId}\`\n`);
-      if (s.model) { md.appendMarkdown(`- Modèle : ${s.model}\n`); }
-      md.appendMarkdown(`- Dernière activité : ${s.lastActivity.toLocaleString()}`);
+      md.appendMarkdown(`\n\n- ${vscode.l10n.t('Project')}: \`${s.project}\`\n- ${vscode.l10n.t('Session')}: \`${s.sessionId}\`\n`);
+      if (s.model) { md.appendMarkdown(`- ${vscode.l10n.t('Model')}: ${s.model}\n`); }
+      md.appendMarkdown(`- ${vscode.l10n.t('Last activity')}: ${s.lastActivity.toLocaleString(vscode.env.language)}`);
       item.tooltip = md;
       item.command = openCommand(s.file);
       return item;
@@ -160,9 +183,9 @@ class SessionsProvider implements vscode.TreeDataProvider<SessionNode> {
     const item = new vscode.TreeItem(r.agentType, vscode.TreeItemCollapsibleState.None);
     item.iconPath = stateIcon(r.state);
     const dur = r.startedAt ? Math.round(((r.endedAt ?? new Date()).getTime() - r.startedAt.getTime()) / 1000) : undefined;
-    item.description = [r.description, STATE_LABEL[r.state], dur !== undefined ? `${dur}s` : '', r.background ? 'arrière-plan' : '']
+    item.description = [r.description, stateLabel(r.state), dur !== undefined ? `${dur}s` : '', r.background ? vscode.l10n.t('background') : '']
       .filter(Boolean).join(' · ');
-    const md = new vscode.MarkdownString(`**Sous-agent ${r.agentType}** — ${STATE_LABEL[r.state]}\n\n`);
+    const md = new vscode.MarkdownString(`**${vscode.l10n.t('Sub-agent {0}', r.agentType)}** — ${stateLabel(r.state)}\n\n`);
     md.appendText(r.description);
     item.tooltip = md;
     return item;
@@ -201,8 +224,10 @@ export function activate(context: vscode.ExtensionContext) {
 
     const orch = snap.sessions.filter(s => s.state === 'running').length;
     const subs = snap.sessions.reduce((n, s) => n + s.subAgents.filter(r => r.state === 'running').length, 0);
-    status.text = orch || subs ? `$(sync~spin) Agents : ${orch} orch. · ${subs} sous-agents` : '$(hubot) Agents : au repos';
-    status.tooltip = `Outils détectés : ${snap.providers.map(p => PROVIDER_LABEL[p]).join(', ') || 'aucun'} — cliquer pour la vue graphe`;
+    status.text = orch || subs
+      ? `$(sync~spin) ${vscode.l10n.t('Agents: {0} orch. · {1} sub-agents', orch, subs)}`
+      : `$(hubot) ${vscode.l10n.t('Agents: idle')}`;
+    status.tooltip = vscode.l10n.t('Detected tools: {0} — click for the graph view', snap.providers.map(p => PROVIDER_LABEL[p]).join(', ') || vscode.l10n.t('none'));
     status.show();
   };
 
@@ -243,7 +268,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('agentViewer.toggleScope', async () => {
       const next = cfg().get<string>('scope') === 'all' ? 'workspace' : 'all';
       await cfg().update('scope', next, vscode.ConfigurationTarget.Global);
-      vscode.window.setStatusBarMessage(next === 'all' ? 'Agents : tous les projets' : 'Agents : workspace courant', 2000);
+      vscode.window.setStatusBarMessage(next === 'all' ? vscode.l10n.t('Agents: all projects') : vscode.l10n.t('Agents: current workspace'), 2000);
     }),
     vscode.workspace.onDidChangeConfiguration(e => {
       if (!e.affectsConfiguration('agentViewer')) { return; }

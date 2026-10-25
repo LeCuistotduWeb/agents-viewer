@@ -1,0 +1,18 @@
+{
+  "viewsContainer.title": "Agents",
+  "view.available.name": "Agents disponibles",
+  "view.sessions.name": "Orchestrateurs & sous-agents",
+  "cmd.openGraph.title": "Agents Viewer : ouvrir la vue graphe",
+  "cmd.refresh.title": "Agents Viewer : rafraîchir",
+  "cmd.toggleScope.title": "Agents Viewer : basculer workspace / tous les projets",
+  "cmd.openFile.title": "Ouvrir le fichier",
+  "config.title": "Agents Viewer",
+  "config.providers.desc": "Outils d'agents à surveiller (seuls ceux installés apparaissent).",
+  "config.claude.dir.desc": "Dossier Claude Code (vide = $CLAUDE_CONFIG_DIR ou ~/.claude).",
+  "config.codex.dir.desc": "Dossier Codex CLI (vide = $CODEX_HOME ou ~/.codex).",
+  "config.gemini.dir.desc": "Dossier Gemini CLI (vide = ~/.gemini).",
+  "config.scope.desc": "Afficher les sessions du workspace courant ou de tous les projets.",
+  "config.activeThreshold.desc": "Une session dont les fichiers ont été modifiés il y a moins de N secondes est considérée « en cours ».",
+  "config.recentHours.desc": "N'afficher que les sessions actives dans les N dernières heures.",
+  "config.pollInterval.desc": "Fréquence de rafraîchissement automatique."
+}

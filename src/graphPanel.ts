@@ -5,6 +5,39 @@ import { PROVIDER_LABEL } from './model';
 import { Snapshot } from './providers';
 
 /**
+ * Libellés de la webview, traduits côté extension (vscode.l10n) : la webview ne garde
+ * aucun dictionnaire propre et lit uniquement ces chaînes — une seule source de vérité.
+ */
+function webviewStrings(): Record<string, string> {
+  return {
+    appTitle: vscode.l10n.t('Agents'),
+    pillOrchestrators: vscode.l10n.t('active orchestrator(s)'),
+    pillSubagents: vscode.l10n.t('sub-agent(s) working'),
+    pillAgents: vscode.l10n.t('available agents'),
+    filterActive: vscode.l10n.t('Active'),
+    filterAll: vscode.l10n.t('All'),
+    providerAll: vscode.l10n.t('All tools'),
+    noProviders: vscode.l10n.t('No agent tool detected (Claude Code, Codex, Gemini CLI). Check the folders in the "Agents Viewer" settings.'),
+    headingTeam: vscode.l10n.t('Team'),
+    memberWorking: vscode.l10n.t('working'),
+    sourceProject: vscode.l10n.t('project'),
+    sourceUser: vscode.l10n.t('personal'),
+    sourceBuiltin: vscode.l10n.t('built-in'),
+    headingActive: vscode.l10n.t('Running orchestrations'),
+    headingRecent: vscode.l10n.t('Recent orchestrations'),
+    emptyActive: vscode.l10n.t('Everyone is asleep 💤 — no active agent session. Switch to "All" to see history.'),
+    emptyRecent: vscode.l10n.t('No recent agent session.'),
+    openTranscript: vscode.l10n.t('Open transcript'),
+    orchestrator: vscode.l10n.t('Orchestrator'),
+    stWorking: vscode.l10n.t('working'),
+    stSleeping: vscode.l10n.t('sleeping'),
+    stDone: vscode.l10n.t('done'),
+    stError: vscode.l10n.t('error'),
+    stInterrupted: vscode.l10n.t('interrupted'),
+  };
+}
+
+/**
  * Panneau « vue graphe ». Sécurité :
  *  - CSP stricte : aucun accès réseau, scripts uniquement locaux avec nonce, pas de style inline ;
  *  - la webview ne peut ouvrir qu'un transcript de session déjà listé (vérifié côté extension).
@@ -49,6 +82,8 @@ export class GraphPanel {
     // On n'envoie que ce que la vue affiche (pas de chemin des fichiers d'agents, pas d'outils).
     this.lastPayload = {
       type: 'update',
+      locale: vscode.env.language,
+      i18n: webviewStrings(),
       data: {
         providers: providers.map(id => ({ id, label: PROVIDER_LABEL[id] })),
         agents: agents.map(a => ({ provider: a.provider, name: a.name, description: a.description, model: a.model, source: a.source })),
@@ -79,8 +114,9 @@ export class GraphPanel {
     const nonce = crypto.randomBytes(16).toString('base64');
     const css = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'graph.css'));
     const js = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'graph.js'));
+    const lang = (vscode.env.language || 'en').split('-')[0];
     return `<!DOCTYPE html>
-<html lang="fr">
+<html lang="${lang}">
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'; img-src ${webview.cspSource};">

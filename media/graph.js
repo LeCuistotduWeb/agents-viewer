@@ -4,6 +4,11 @@
   const vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : { postMessage() {}, getState() {}, setState() {} };
   const app = document.getElementById('app');
   let data = { providers: [], agents: [], sessions: [] };
+  // Libellés fournis par l'extension (vscode.l10n) : aucune chaîne en dur ici.
+  let i18n = {};
+  let locale = 'en';
+  let rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style: 'short' });
+  const T = (k) => i18n[k] || k;
   const saved = vscode.getState() || {};
   let filter = saved.filter || 'active';
   let only = saved.only || 'all';   // fournisseur affiché
@@ -45,7 +50,8 @@
   // running → working ; idle → sleeping ; le reste tel quel
   function look(state) { return state === 'running' ? 'working' : state === 'idle' ? 'sleeping' : state; }
 
-  const LABEL = { working: 'au travail', sleeping: 'en veille', done: 'terminé', error: 'erreur', interrupted: 'interrompu' };
+  const LOOK_KEY = { working: 'stWorking', sleeping: 'stSleeping', done: 'stDone', error: 'stError', interrupted: 'stInterrupted' };
+  function statusLabel(l) { return T(LOOK_KEY[l] || l); }
 
   function el(tag, cls, text) {
     const e = document.createElement(tag);
@@ -71,20 +77,21 @@
   }
 
   function ago(iso) {
-    const s = Math.round((Date.now() - Date.parse(iso)) / 1000);
-    if (s < 60) { return 'il y a ' + s + 's'; }
-    if (s < 3600) { return 'il y a ' + Math.round(s / 60) + ' min'; }
-    if (s < 172800) { return 'il y a ' + Math.round(s / 3600) + ' h'; }
-    return 'il y a ' + Math.round(s / 86400) + ' j';
+    const s = Math.round((Date.parse(iso) - Date.now()) / 1000); // négatif = passé
+    const abs = Math.abs(s);
+    if (abs < 60) { return rtf.format(s, 'second'); }
+    if (abs < 3600) { return rtf.format(Math.round(s / 60), 'minute'); }
+    if (abs < 172800) { return rtf.format(Math.round(s / 3600), 'hour'); }
+    return rtf.format(Math.round(s / 86400), 'day');
   }
 
   function statusLine(state, startedAt, endedAt) {
     const l = look(state);
-    const s = el('div', 'status ' + l, LABEL[l] || l);
+    const s = el('div', 'status ' + l, statusLabel(l));
     if (startedAt && (l === 'working' || l === 'done' || l === 'error')) {
       s.dataset.start = startedAt;
       if (endedAt) { s.dataset.end = endedAt; }
-      s.textContent = (LABEL[l]) + ' · ' + duration(startedAt, endedAt);
+      s.textContent = statusLabel(l) + ' · ' + duration(startedAt, endedAt);
     }
     return s;
   }
@@ -110,13 +117,13 @@
 
     // En-tête
     const header = el('header');
-    header.append(el('h1', '', 'Agents'));
+    header.append(el('h1', '', T('appTitle')));
     const stats = el('div', 'stats');
     const pill = (n, txt, live) => { const p = el('span', 'pill' + (live && n ? ' live' : '')); p.append(el('b', '', String(n)), document.createTextNode(' ' + txt)); return p; };
-    stats.append(pill(liveSessions.length, 'orchestrateur(s) actif(s)', true), pill(liveSubs, 'sous-agent(s) au travail', true), pill(agents.length, 'agents disponibles'));
+    stats.append(pill(liveSessions.length, T('pillOrchestrators'), true), pill(liveSubs, T('pillSubagents'), true), pill(agents.length, T('pillAgents')));
     header.append(stats);
     const filters = el('div', 'filters');
-    for (const [key, txt] of [['active', 'Actives'], ['all', 'Toutes']]) {
+    for (const [key, txt] of [['active', T('filterActive')], ['all', T('filterAll')]]) {
       const b = el('button', filter === key ? 'on' : '', txt);
       b.addEventListener('click', () => { filter = key; save(); render(); });
       filters.append(b);
@@ -124,7 +131,7 @@
     header.append(filters);
     if (data.providers.length > 1) {
       const pf = el('div', 'filters');
-      for (const p of [{ id: 'all', label: 'Tous' }, ...data.providers]) {
+      for (const p of [{ id: 'all', label: T('providerAll') }, ...data.providers]) {
         const b = el('button', only === p.id ? 'on' : '', p.label);
         b.addEventListener('click', () => { only = p.id; save(); render(); });
         pf.append(b);
@@ -133,12 +140,12 @@
     }
     app.append(header);
     if (!data.providers.length) {
-      app.append(el('div', 'empty', 'Aucun outil d’agents détecté (Claude Code, Codex, Gemini CLI). Vérifie les dossiers dans les réglages « Agent Viewer ».'));
+      app.append(el('div', 'empty', T('noProviders')));
       return;
     }
 
     // Équipe
-    app.append(el('h2', '', 'Équipe'));
+    app.append(el('h2', '', T('headingTeam')));
     const team = el('div', 'team');
     const busy = new Map();
     const k = (p, n) => p + ':' + n;
@@ -150,7 +157,7 @@
       card.title = a.description || a.name;
       card.append(avatar(a.name, n ? 'running' : 'idle'));
       card.append(el('div', 'name', a.name));
-      card.append(el('div', 'meta', n ? 'au travail' : ({ project: 'projet', user: 'perso', builtin: 'intégré' }[a.source] || a.source) + (a.model ? ' · ' + a.model : '')));
+      card.append(el('div', 'meta', n ? T('memberWorking') : ({ project: T('sourceProject'), user: T('sourceUser'), builtin: T('sourceBuiltin') }[a.source] || a.source) + (a.model ? ' · ' + a.model : '')));
       if (data.providers.length > 1) { const t = tag(a.provider, labelOf(a.provider)); t.classList.add('corner'); card.append(t); }
       if (n > 1) { card.append(el('span', 'count', '×' + n)); }
       team.append(card);
@@ -158,13 +165,11 @@
     app.append(team);
 
     // Orchestrations
-    app.append(el('h2', '', filter === 'active' ? 'Orchestrations en cours' : 'Orchestrations récentes'));
+    app.append(el('h2', '', filter === 'active' ? T('headingActive') : T('headingRecent')));
     const shown = filter === 'active' ? liveSessions : sessions;
     const list = el('div', 'sessions');
     if (!shown.length) {
-      list.append(el('div', 'empty', filter === 'active'
-        ? 'Tout le monde dort 💤 — aucune session d’agent active. Passe sur « Toutes » pour voir l’historique.'
-        : 'Aucune session d’agent récente.'));
+      list.append(el('div', 'empty', filter === 'active' ? T('emptyActive') : T('emptyRecent')));
     }
     for (const s of shown) { list.append(sessionCard(s)); }
     app.append(list);
@@ -182,10 +187,10 @@
     const ul = el('ul');
     const root = el('li');
     const orch = el('div', 'node orch clickable');
-    orch.title = 'Ouvrir le transcript';
+    orch.title = T('openTranscript');
     orch.addEventListener('click', () => open(s.file));
     orch.append(avatar('orchestrateur', s.state, PROVIDER_HUE[s.provider]));
-    orch.append(el('div', 'label', s.providerLabel || 'Orchestrateur'));
+    orch.append(el('div', 'label', s.providerLabel || T('orchestrator')));
     orch.append(el('div', 'desc', s.model || ''));
     orch.append(statusLine(s.state));
     root.append(orch);
@@ -216,7 +221,7 @@
   // Chronos des agents au travail, mis à jour chaque seconde sans tout redessiner
   setInterval(() => {
     document.querySelectorAll('.status.working[data-start]').forEach(s => {
-      s.textContent = LABEL.working + ' · ' + duration(s.dataset.start);
+      s.textContent = statusLabel('working') + ' · ' + duration(s.dataset.start);
     });
   }, 1000);
 
@@ -225,7 +230,12 @@
   window.addEventListener('message', e => {
     const m = e.data;
     if (!m || m.type !== 'update') { return; }
-    const key = JSON.stringify(m.data);
+    if (m.i18n) { i18n = m.i18n; }
+    if (m.locale && m.locale !== locale) {
+      locale = m.locale;
+      try { rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style: 'short' }); } catch { /* locale inconnue */ }
+    }
+    const key = JSON.stringify([m.locale, m.i18n, m.data]);
     if (key === lastKey) { return; }
     lastKey = key;
     data = m.data;

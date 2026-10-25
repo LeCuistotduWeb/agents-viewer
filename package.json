@@ -37,6 +37,7 @@
   "engines": {
     "vscode": "^1.85.0"
   },
+  "l10n": "./l10n",
   "categories": [
     "AI",
     "Visualization",
@@ -51,7 +52,7 @@
       "activitybar": [
         {
           "id": "agentViewer",
-          "title": "Agents",
+          "title": "%viewsContainer.title%",
           "icon": "media/robot.svg"
         }
       ]
@@ -60,33 +61,33 @@
       "agentViewer": [
         {
           "id": "agentViewer.available",
-          "name": "Agents disponibles"
+          "name": "%view.available.name%"
         },
         {
           "id": "agentViewer.sessions",
-          "name": "Orchestrateurs & sous-agents"
+          "name": "%view.sessions.name%"
         }
       ]
     },
     "commands": [
       {
         "command": "agentViewer.openGraph",
-        "title": "Agents Viewer : ouvrir la vue graphe",
+        "title": "%cmd.openGraph.title%",
         "icon": "$(type-hierarchy)"
       },
       {
         "command": "agentViewer.refresh",
-        "title": "Agents Viewer : rafraîchir",
+        "title": "%cmd.refresh.title%",
         "icon": "$(refresh)"
       },
       {
         "command": "agentViewer.toggleScope",
-        "title": "Agents Viewer : basculer workspace / tous les projets",
+        "title": "%cmd.toggleScope.title%",
         "icon": "$(globe)"
       },
       {
         "command": "agentViewer.openFile",
-        "title": "Ouvrir le fichier"
+        "title": "%cmd.openFile.title%"
       }
     ],
     "menus": {
@@ -115,7 +116,7 @@
       ]
     },
     "configuration": {
-      "title": "Agents Viewer",
+      "title": "%config.title%",
       "properties": {
         "agentViewer.providers": {
           "type": "array",
@@ -132,22 +133,22 @@
             "codex",
             "gemini"
           ],
-          "description": "Outils d'agents à surveiller (seuls ceux installés apparaissent)."
+          "description": "%config.providers.desc%"
         },
         "agentViewer.claude.dir": {
           "type": "string",
           "default": "",
-          "description": "Dossier Claude Code (vide = $CLAUDE_CONFIG_DIR ou ~/.claude)."
+          "description": "%config.claude.dir.desc%"
         },
         "agentViewer.codex.dir": {
           "type": "string",
           "default": "",
-          "description": "Dossier Codex CLI (vide = $CODEX_HOME ou ~/.codex)."
+          "description": "%config.codex.dir.desc%"
         },
         "agentViewer.gemini.dir": {
           "type": "string",
           "default": "",
-          "description": "Dossier Gemini CLI (vide = ~/.gemini)."
+          "description": "%config.gemini.dir.desc%"
         },
         "agentViewer.scope": {
           "type": "string",
@@ -156,22 +157,22 @@
             "all"
           ],
           "default": "workspace",
-          "description": "Afficher les sessions du workspace courant ou de tous les projets."
+          "description": "%config.scope.desc%"
         },
         "agentViewer.activeThresholdSeconds": {
           "type": "number",
           "default": 30,
-          "description": "Une session dont les fichiers ont été modifiés il y a moins de N secondes est considérée « en cours »."
+          "description": "%config.activeThreshold.desc%"
         },
         "agentViewer.recentHours": {
           "type": "number",
           "default": 24,
-          "description": "N'afficher que les sessions actives dans les N dernières heures."
+          "description": "%config.recentHours.desc%"
         },
         "agentViewer.pollIntervalSeconds": {
           "type": "number",
           "default": 3,
-          "description": "Fréquence de rafraîchissement automatique."
+          "description": "%config.pollInterval.desc%"
         }
       }
     }
