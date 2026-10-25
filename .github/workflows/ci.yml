@@ -25,8 +25,12 @@ jobs:
         with:
           name: vsix
           path: '*.vsix'
-      # On a version tag (e.g. v0.2.0), publish the .vsix as a GitHub Release asset.
+      # On a version tag (e.g. v0.2.0), publish the .vsix as a GitHub Release asset,
+      # with only that version's CHANGELOG section as notes (fails if it is missing).
       - if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$GITHUB_REF_NAME" *.vsix --title "$GITHUB_REF_NAME" --notes-file CHANGELOG.md
+        run: |
+          awk -v v="${GITHUB_REF_NAME#v}" '/^## /{p = ($2 == v)} p && !/^## /' CHANGELOG.md > release-notes.md
+          grep -q . release-notes.md || { echo "::error::No CHANGELOG section for ${GITHUB_REF_NAME#v}"; exit 1; }
+          gh release create "$GITHUB_REF_NAME" *.vsix --title "$GITHUB_REF_NAME" --notes-file release-notes.md
