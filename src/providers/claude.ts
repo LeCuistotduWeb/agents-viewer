@@ -2,13 +2,19 @@
  * Claude Code
  *  - agents : ~/.claude/agents/*.md et <workspace>/.claude/agents/*.md (frontmatter YAML)
  *  - sessions : ~/.claude/projects/<cwd-encodé>/<sessionId>.jsonl
- *  - sous-agents : appels d'outil Task/Agent ; transcripts dans <sessionId>/subagents/*.jsonl
+ *  - titre : <sessionId>/custom-title.json {customTitle} > ligne type:"ai-title" {aiTitle}
+ *            > premier message humain
+ *  - sous-agents : <sessionId>/subagents/agent-*.meta.json (agentType, description,
+ *    requestShape foreground/background, toolUseId, finished) + mtime du .jsonl voisin.
+ *    À défaut (format ancien / autre install) : appels d'outil Task/Agent du transcript.
+ *
+ * Aucun de ces formats n'est une API publique : tout est lu de façon défensive.
  */
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
-  AgentDef, Provider, ProviderContext, SessionInfo, SubAgentRun,
+  AgentDef, Provider, ProviderContext, RunState, SessionInfo, SubAgentRun,
   cached, cleanTitle, dedupeAgents, exists, expandHome, isHumanText, parseFrontmatter,
   readAgentDir, readDirSafe, readJsonl, statSafe, toDate,
 } from '../model';
@@ -25,7 +31,17 @@ export function encodeClaudeProjectPath(p: string): string {
   return p.replace(/[^a-zA-Z0-9]/g, '-');
 }
 
-interface Parsed { title: string; cwd?: string; model?: string; runs: SubAgentRun[]; }
+/** Appel d'outil Task/Agent repéré dans le transcript principal, indexé par son id. */
+interface ToolCall {
+  startedAt?: Date;
+  endedAt?: Date;
+  isError?: boolean;
+  runInBackground: boolean;
+  agentType?: string;
+  description?: string;
+}
+
+interface Parsed { aiTitle?: string; firstUser?: string; cwd?: string; model?: string; toolCalls: Map<string, ToolCall>; }
 
 function textOf(content: unknown): string {
   if (typeof content === 'string') { return content; }
@@ -36,46 +52,75 @@ function textOf(content: unknown): string {
 }
 
 function parse(file: string): Parsed {
-  const runs = new Map<string, SubAgentRun>();
-  let title = '', summary = '', cwd: string | undefined, model: string | undefined;
+  const toolCalls = new Map<string, ToolCall>();
+  let aiTitle: string | undefined, firstUser: string | undefined;
+  let cwd: string | undefined, model: string | undefined;
   for (const e of readJsonl(file)) {
-    if (e.type === 'summary' && e.summary) { summary = String(e.summary); }
+    if (e.type === 'ai-title' && typeof e.aiTitle === 'string' && e.aiTitle.trim()) { aiTitle = e.aiTitle; }
     if (e.cwd && !cwd) { cwd = e.cwd; }
     if (e.isSidechain) { continue; }
     const ts = toDate(e.timestamp);
     const msg = e.message;
+    if (e.type === 'assistant' && typeof e.requestedModel === 'string' && e.requestedModel !== '<synthetic>' && !model) {
+      model = e.requestedModel;
+    }
     if (!msg) { continue; }
     if (msg.model && msg.model !== '<synthetic>') { model = msg.model; }
-    if (e.type === 'user' && !title) {
+    if (e.type === 'user' && !e.isMeta && !firstUser) {
       const t = textOf(msg.content);
-      if (isHumanText(t)) { title = t; }
+      if (isHumanText(t)) { firstUser = t; }
     }
     if (!Array.isArray(msg.content)) { continue; }
     for (const c of msg.content) {
       if (c?.type === 'tool_use' && SUBAGENT_TOOLS.has(c.name)) {
         const input = c.input || {};
-        runs.set(c.id, {
-          id: c.id,
-          agentType: input.subagent_type || 'general-purpose',
+        toolCalls.set(c.id, {
+          startedAt: ts,
+          runInBackground: input.run_in_background === true,
+          agentType: input.subagent_type,
           description: input.description || (typeof input.prompt === 'string' ? input.prompt.slice(0, 80) : ''),
-          startedAt: ts, state: 'running', background: input.run_in_background === true,
         });
       } else if (c?.type === 'tool_result') {
-        const run = runs.get(c.tool_use_id);
-        if (run) { run.endedAt = ts; run.state = c.is_error ? 'error' : 'done'; }
+        const call = toolCalls.get(c.tool_use_id);
+        if (call) { call.endedAt = ts; call.isError = c.is_error === true; }
       }
     }
   }
-  return { title: cleanTitle(summary || title), cwd, model, runs: [...runs.values()] };
+  return { aiTitle, firstUser, cwd, model, toolCalls };
 }
 
-function latestSubagentWrite(sessionFile: string): number {
-  const dir = path.join(sessionFile.replace(/\.jsonl$/, ''), 'subagents');
-  let latest = 0;
+/** Titre explicitement fixé par l'utilisateur (<sessionId>/custom-title.json). */
+function customTitle(sessionDir: string): string | undefined {
+  try {
+    const o = JSON.parse(fs.readFileSync(path.join(sessionDir, 'custom-title.json'), 'utf8'));
+    const t = o?.customTitle;
+    return typeof t === 'string' && t.trim() ? t : undefined;
+  } catch { return undefined; }
+}
+
+interface SubMeta { id: string; agentType: string; description: string; background: boolean; toolUseId?: string; finished: boolean; mtimeMs: number; }
+
+/** Lit <sessionId>/subagents/agent-*.meta.json (chaque sous-agent lancé, même après /clear). */
+function readSubagentMetas(sessionDir: string): SubMeta[] {
+  const dir = path.join(sessionDir, 'subagents');
+  const out: SubMeta[] = [];
   for (const f of readDirSafe(dir)) {
-    if (f.endsWith('.jsonl')) { latest = Math.max(latest, statSafe(path.join(dir, f))?.mtimeMs ?? 0); }
+    if (!f.endsWith('.meta.json')) { continue; }
+    try {
+      const m = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+      const base = f.slice(0, -'.meta.json'.length);
+      out.push({
+        id: base,
+        agentType: typeof m.agentType === 'string' ? m.agentType : 'general-purpose',
+        description: typeof m.description === 'string' ? m.description : '',
+        background: m.requestShape === 'background',
+        toolUseId: typeof m.toolUseId === 'string' ? m.toolUseId : undefined,
+        finished: m.finished === true,
+        mtimeMs: statSafe(path.join(dir, base + '.jsonl'))?.mtimeMs ?? 0,
+      });
+    } catch { /* méta illisible */ }
   }
-  return latest;
+  return out;
 }
 
 export function claudeProvider(dirOverride?: string): Provider {
@@ -111,26 +156,63 @@ export function claudeProvider(dirOverride?: string): Provider {
           if (!f.endsWith('.jsonl')) { continue; }
           const file = path.join(dir, f);
           const stat = statSafe(file);
-          if (!stat || ctx.now - stat.mtimeMs > ctx.recentMs) { continue; }
+          if (!stat) { continue; }
+          const sessionDir = file.replace(/\.jsonl$/, '');
+          const metas = readSubagentMetas(sessionDir);
+          const subWrite = metas.reduce((m, s) => Math.max(m, s.mtimeMs), 0);
+          const lastWrite = Math.max(stat.mtimeMs, subWrite);
+          if (ctx.now - lastWrite > ctx.recentMs) { continue; }
+
           let p: Parsed;
           try { p = cached(file, stat, () => parse(file)); } catch { continue; }
 
-          const subWrite = latestSubagentWrite(file);
-          const lastWrite = Math.max(stat.mtimeMs, subWrite);
+          const sessFresh = ctx.now - stat.mtimeMs < ctx.activeThresholdMs;
           const fresh = ctx.now - lastWrite < ctx.activeThresholdMs;
-          const subFresh = subWrite > 0 && ctx.now - subWrite < ctx.activeThresholdMs;
-          const runs = p.runs.map(r => {
-            const run = { ...r };
-            if (run.state === 'running' && !fresh) { run.state = 'interrupted'; }
-            if (run.background && run.state === 'done' && subFresh) { run.state = 'running'; }
-            return run;
-          });
+          const isFresh = (m: number) => m > 0 && ctx.now - m < ctx.activeThresholdMs;
+
+          let runs: SubAgentRun[];
+          if (metas.length) {
+            runs = metas.map(s => {
+              const call = s.toolUseId ? p.toolCalls.get(s.toolUseId) : undefined;
+              const background = s.background || call?.runInBackground === true;
+              const jsonlFresh = isFresh(s.mtimeMs);
+              let state: RunState;
+              if (s.finished) { state = 'done'; }
+              else if (!background && call?.endedAt) { state = call.isError ? 'error' : 'done'; }
+              else if (jsonlFresh) { state = 'running'; }
+              else { state = background ? 'interrupted' : 'done'; }
+              return {
+                id: s.toolUseId || s.id,
+                agentType: s.agentType,
+                description: (s.description || call?.description || '').replace(/\s+/g, ' ').slice(0, 120),
+                startedAt: call?.startedAt,
+                endedAt: state === 'running' ? undefined : (call?.endedAt ?? (s.mtimeMs ? new Date(s.mtimeMs) : undefined)),
+                state, background,
+              };
+            }).sort((a, b) => (a.startedAt?.getTime() ?? 0) - (b.startedAt?.getTime() ?? 0));
+          } else {
+            // Format ancien / autre installation : on se rabat sur les appels Task/Agent du transcript.
+            runs = [...p.toolCalls.entries()].map(([id, call]) => {
+              let state: RunState = 'running';
+              if (call.endedAt) { state = call.isError ? 'error' : 'done'; }
+              if (state === 'running' && !sessFresh) { state = 'interrupted'; }
+              return {
+                id,
+                agentType: call.agentType || 'general-purpose',
+                description: call.description || '',
+                startedAt: call.startedAt,
+                endedAt: state === 'running' ? undefined : call.endedAt,
+                state, background: call.runInBackground,
+              };
+            });
+          }
+
           sessions.push({
             provider: 'claude',
             sessionId: f.replace(/\.jsonl$/, ''),
             file,
             project: p.cwd || pd,
-            title: p.title,
+            title: cleanTitle(customTitle(sessionDir) || p.aiTitle || p.firstUser),
             lastActivity: new Date(lastWrite),
             state: fresh || runs.some(r => r.state === 'running') ? 'running' : 'idle',
             model: p.model,

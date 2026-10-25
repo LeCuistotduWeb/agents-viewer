@@ -180,6 +180,7 @@
     "compile": "tsc -p .",
     "watch": "tsc -watch -p .",
     "test": "npm run compile && node out/test/smoke.js",
+    "diagnose": "npm run compile && node out/diagnose.js",
     "package": "vsce package --no-dependencies"
   },
   "devDependencies": {

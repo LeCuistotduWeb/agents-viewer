@@ -35,6 +35,31 @@ write(cold, jl(
   { type: 'assistant', timestamp: t(3590), message: { content: [{ type: 'tool_use', id: 'x', name: 'Task', input: { subagent_type: 'Plan' } }] } },
 ));
 age(cold, 3600);
+// Titre explicite fixé par l'utilisateur : <sessionId>/custom-title.json gagne sur tout le reste.
+write(path.join(cproj, 'bbb', 'custom-title.json'), JSON.stringify({ customTitle: 'Titre perso' }));
+
+// Format réel récent : titre via ai-title, modèle via requestedModel, sous-agents via subagents/*.meta.json.
+const ccc = path.join(cproj, 'ccc.jsonl');
+write(ccc, jl(
+  { type: 'user', cwd: ws, timestamp: t(40), isMeta: true, message: { content: '<command-name>/clear</command-name>' } },
+  { type: 'user', cwd: ws, timestamp: t(38), message: { content: 'Question initiale de la session' } },
+  { type: 'ai-title', aiTitle: 'Titre généré par IA' },
+  { type: 'assistant', requestedModel: 'claude-opus-5-5', timestamp: t(35), message: { model: 'claude-opus-5-5', content: [
+    { type: 'tool_use', id: 'toolu_bg1', name: 'Agent', input: { subagent_type: 'reviewer' } },
+    { type: 'tool_use', id: 'toolu_bg2', name: 'Agent', input: { subagent_type: 'backend' } },
+  ] } },
+));
+// Sous-agents : un background terminé, un background encore actif, un background interrompu, un foreground terminé.
+const subDir = path.join(cproj, 'ccc', 'subagents');
+const sub = (name: string, meta: object, ageS: number) => {
+  write(path.join(subDir, name + '.meta.json'), JSON.stringify(meta));
+  write(path.join(subDir, name + '.jsonl'), jl({ type: 'assistant', timestamp: t(ageS) }));
+  age(path.join(subDir, name + '.jsonl'), ageS);
+};
+sub('agent-bg1', { agentType: 'reviewer', description: 'Relire le code', requestShape: 'background', toolUseId: 'toolu_bg1', finished: true }, 3600);
+sub('agent-bg2', { agentType: 'backend', description: 'Implémenter', requestShape: 'background', toolUseId: 'toolu_bg2' }, 2);
+sub('agent-bg3', { agentType: 'worker', requestShape: 'background' }, 3600);
+sub('agent-fg1', { agentType: 'general-purpose', requestShape: 'foreground' }, 3600);
 
 // ------------------------------------------------ Codex CLI
 write(path.join(dirs.codex, 'agents', 'security.toml'), 'name = "security"\ndescription = """Audite la sécurité"""\nmodel = "gpt-5.5"\ndeveloper_instructions = "..."\n');
@@ -87,10 +112,24 @@ assert.deepStrictEqual(names('gemini'), ['docs-writer']);
 
 const by = (p: string) => snap.sessions.filter(s => s.provider === p);
 // Claude
-const [cActive, cIdle] = by('claude');
+const cById = (id: string) => by('claude').find(s => s.sessionId === id)!;
+// aaa : format de repli (appels Task/Agent du transcript), titre = 1er message humain.
+const cActive = cById('aaa');
+assert.strictEqual(cActive.title, 'Refactor le module de paiement');
 assert.strictEqual(cActive.state, 'running');
 assert.deepStrictEqual(cActive.subAgents.map(r => [r.agentType, r.state]), [['Explore', 'done'], ['reviewer', 'running']]);
+// bbb : session idle + titre perso (custom-title.json) prioritaire sur le 1er message.
+const cIdle = cById('bbb');
+assert.strictEqual(cIdle.title, 'Titre perso');
 assert.strictEqual(cIdle.subAgents[0].state, 'interrupted');
+// ccc : format réel — titre ai-title (le message meta /clear est ignoré), modèle, états des sous-agents.
+const cReal = cById('ccc');
+assert.strictEqual(cReal.title, 'Titre généré par IA');
+assert.strictEqual(cReal.model, 'claude-opus-5-5');
+assert.strictEqual(cReal.state, 'running'); // un sous-agent background est encore actif
+const states = Object.fromEntries(cReal.subAgents.map(r => [r.agentType, r.state]));
+assert.deepStrictEqual(states, { reviewer: 'done', backend: 'running', worker: 'interrupted', 'general-purpose': 'done' });
+assert.strictEqual(cReal.subAgents.find(r => r.agentType === 'backend')!.background, true);
 // Codex : 1 session parente, sous-agents = sessions enfants (pas listées à part)
 const cx = by('codex');
 assert.strictEqual(cx.length, 1);
@@ -107,7 +146,7 @@ assert.strictEqual(gm.find(s => s.sessionId.endsWith('g0'))!.state, 'idle');
 
 // Autre workspace : rien ; scope global : tout
 assert.strictEqual(collect(buildProviders({ enabled: ['claude', 'codex', 'gemini'], dirs }), { ...ctx, workspaceDirs: ['/ailleurs'] }).sessions.length, 0);
-assert.strictEqual(collect(buildProviders({ enabled: ['claude', 'codex', 'gemini'], dirs }), { ...ctx, workspaceDirs: [], scopeAll: true }).sessions.length, 5);
+assert.strictEqual(collect(buildProviders({ enabled: ['claude', 'codex', 'gemini'], dirs }), { ...ctx, workspaceDirs: [], scopeAll: true }).sessions.length, 6);
 // Fournisseur absent : ignoré sans erreur
 assert.deepStrictEqual(collect(buildProviders({ enabled: ['codex'], dirs: { codex: path.join(root, 'nope') } }), ctx).providers, []);
 
