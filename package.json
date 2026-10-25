@@ -1,0 +1,191 @@
+{
+  "name": "agents-viewer",
+  "displayName": "Agents Viewer",
+  "description": "A local, read-only dashboard for your AI coding agents: Claude Code, Codex and Gemini CLI. Available agents, orchestrator → sub-agent hierarchy and live status, across every project.",
+  "version": "0.3.0",
+  "publisher": "lecuistotduweb",
+  "author": {
+    "name": "lecuistotduweb",
+    "url": "https://github.com/LeCuistotduWeb"
+  },
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#1b1d2e",
+    "theme": "dark"
+  },
+  "keywords": [
+    "agents",
+    "ai agents",
+    "dashboard",
+    "monitoring",
+    "subagents",
+    "orchestrator",
+    "multi-agent",
+    "claude code",
+    "codex",
+    "gemini cli"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LeCuistotduWeb/agents-viewer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/LeCuistotduWeb/agents-viewer/issues"
+  },
+  "homepage": "https://github.com/LeCuistotduWeb/agents-viewer#readme",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Visualization",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agentViewer",
+          "title": "Agents",
+          "icon": "media/robot.svg"
+        }
+      ]
+    },
+    "views": {
+      "agentViewer": [
+        {
+          "id": "agentViewer.available",
+          "name": "Agents disponibles"
+        },
+        {
+          "id": "agentViewer.sessions",
+          "name": "Orchestrateurs & sous-agents"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "agentViewer.openGraph",
+        "title": "Agents Viewer : ouvrir la vue graphe",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "agentViewer.refresh",
+        "title": "Agents Viewer : rafraîchir",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "agentViewer.toggleScope",
+        "title": "Agents Viewer : basculer workspace / tous les projets",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "agentViewer.openFile",
+        "title": "Ouvrir le fichier"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "agentViewer.openGraph",
+          "when": "view =~ /agentViewer\\./",
+          "group": "navigation@0"
+        },
+        {
+          "command": "agentViewer.refresh",
+          "when": "view =~ /agentViewer\\./",
+          "group": "navigation"
+        },
+        {
+          "command": "agentViewer.toggleScope",
+          "when": "view == agentViewer.sessions",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "agentViewer.openFile",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Agents Viewer",
+      "properties": {
+        "agentViewer.providers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "claude",
+              "codex",
+              "gemini"
+            ]
+          },
+          "default": [
+            "claude",
+            "codex",
+            "gemini"
+          ],
+          "description": "Outils d'agents à surveiller (seuls ceux installés apparaissent)."
+        },
+        "agentViewer.claude.dir": {
+          "type": "string",
+          "default": "",
+          "description": "Dossier Claude Code (vide = $CLAUDE_CONFIG_DIR ou ~/.claude)."
+        },
+        "agentViewer.codex.dir": {
+          "type": "string",
+          "default": "",
+          "description": "Dossier Codex CLI (vide = $CODEX_HOME ou ~/.codex)."
+        },
+        "agentViewer.gemini.dir": {
+          "type": "string",
+          "default": "",
+          "description": "Dossier Gemini CLI (vide = ~/.gemini)."
+        },
+        "agentViewer.scope": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "all"
+          ],
+          "default": "workspace",
+          "description": "Afficher les sessions du workspace courant ou de tous les projets."
+        },
+        "agentViewer.activeThresholdSeconds": {
+          "type": "number",
+          "default": 30,
+          "description": "Une session dont les fichiers ont été modifiés il y a moins de N secondes est considérée « en cours »."
+        },
+        "agentViewer.recentHours": {
+          "type": "number",
+          "default": 24,
+          "description": "N'afficher que les sessions actives dans les N dernières heures."
+        },
+        "agentViewer.pollIntervalSeconds": {
+          "type": "number",
+          "default": 3,
+          "description": "Fréquence de rafraîchissement automatique."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -watch -p .",
+    "test": "npm run compile && node out/test/smoke.js",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.0.0",
+    "typescript": "^5.4.0"
+  }
+}
