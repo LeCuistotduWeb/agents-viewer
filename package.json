@@ -2,7 +2,7 @@
   "name": "agents-viewer",
   "displayName": "Agents Viewer",
   "description": "A local, read-only dashboard for your AI coding agents: Claude Code, Codex and Gemini CLI. Available agents, orchestrator → sub-agent hierarchy and live status, across every project.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "lecuistotduweb",
   "author": {
     "name": "lecuistotduweb",

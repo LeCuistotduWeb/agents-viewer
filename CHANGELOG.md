@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 - Session tooltip now shows token usage (input / output / cached, plus thinking when
   present) for Claude Code and Codex, read from the transcripts already parsed — no
   extra I/O. Gemini does not expose usage reliably, so it is omitted.
