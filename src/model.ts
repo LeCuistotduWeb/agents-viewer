@@ -37,6 +37,15 @@ export interface SubAgentRun {
   background: boolean;
 }
 
+/** Consommation de tokens cumulée sur le fil principal d'une session (hors sous-agents). */
+export interface TokenUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheCreate: number;
+  thinking: number;
+}
+
 export interface SessionInfo {
   provider: ProviderId;
   sessionId: string;
@@ -46,6 +55,7 @@ export interface SessionInfo {
   lastActivity: Date;
   state: RunState;          // running | idle
   model?: string;
+  usage?: TokenUsage;       // absent si le format ne l'expose pas (Gemini) ou si tout est à zéro
   subAgents: SubAgentRun[];
 }
 
@@ -141,6 +151,23 @@ export function readJsonl(file: string): any[] {
     try { out.push(JSON.parse(line)); } catch { /* ligne partielle */ }
   }
   return out;
+}
+
+/** Nombre fini ≥ 0, sinon 0 (les champs d'usage sont parsés défensivement). */
+export function toCount(v: unknown): number {
+  return typeof v === 'number' && isFinite(v) && v > 0 ? v : 0;
+}
+
+/** Abrège un nombre de tokens : 320 → "320", 1858 → "1.9k", 103659 → "104k", 1_200_000 → "1.2M". */
+export function formatTokens(n: number): string {
+  if (n < 1000) { return String(n); }
+  if (n < 1_000_000) { return (n / 1000).toFixed(n < 10_000 ? 1 : 0).replace(/\.0$/, '') + 'k'; }
+  return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
+}
+
+/** Vrai si au moins un compteur est non nul (sinon on n'affiche pas d'usage). */
+export function hasUsage(u: TokenUsage): boolean {
+  return u.input + u.output + u.cacheRead + u.cacheCreate + u.thinking > 0;
 }
 
 export function toDate(v: unknown): Date | undefined {

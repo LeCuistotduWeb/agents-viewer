@@ -14,9 +14,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
-  AgentDef, Provider, ProviderContext, RunState, SessionInfo, SubAgentRun,
-  cached, cleanTitle, dedupeAgents, exists, expandHome, isHumanText, parseFrontmatter,
-  readAgentDir, readDirSafe, readJsonl, statSafe, toDate,
+  AgentDef, Provider, ProviderContext, RunState, SessionInfo, SubAgentRun, TokenUsage,
+  cached, cleanTitle, dedupeAgents, exists, expandHome, hasUsage, isHumanText, parseFrontmatter,
+  readAgentDir, readDirSafe, readJsonl, statSafe, toCount, toDate,
 } from '../model';
 
 const BUILTIN: AgentDef[] = [
@@ -41,7 +41,7 @@ interface ToolCall {
   description?: string;
 }
 
-interface Parsed { aiTitle?: string; firstUser?: string; cwd?: string; model?: string; toolCalls: Map<string, ToolCall>; }
+interface Parsed { aiTitle?: string; firstUser?: string; cwd?: string; model?: string; usage: TokenUsage; toolCalls: Map<string, ToolCall>; }
 
 function textOf(content: unknown): string {
   if (typeof content === 'string') { return content; }
@@ -55,6 +55,7 @@ function parse(file: string): Parsed {
   const toolCalls = new Map<string, ToolCall>();
   let aiTitle: string | undefined, firstUser: string | undefined;
   let cwd: string | undefined, model: string | undefined;
+  const usage: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0, thinking: 0 };
   for (const e of readJsonl(file)) {
     if (e.type === 'ai-title' && typeof e.aiTitle === 'string' && e.aiTitle.trim()) { aiTitle = e.aiTitle; }
     if (e.cwd && !cwd) { cwd = e.cwd; }
@@ -66,6 +67,14 @@ function parse(file: string): Parsed {
     }
     if (!msg) { continue; }
     if (msg.model && msg.model !== '<synthetic>') { model = msg.model; }
+    if (e.type === 'assistant' && msg.usage && typeof msg.usage === 'object') {
+      const u = msg.usage;
+      usage.input += toCount(u.input_tokens);
+      usage.output += toCount(u.output_tokens);
+      usage.cacheRead += toCount(u.cache_read_input_tokens);
+      usage.cacheCreate += toCount(u.cache_creation_input_tokens);
+      usage.thinking += toCount(u.output_tokens_details?.thinking_tokens);
+    }
     if (e.type === 'user' && !e.isMeta && !firstUser) {
       const t = textOf(msg.content);
       if (isHumanText(t)) { firstUser = t; }
@@ -86,7 +95,7 @@ function parse(file: string): Parsed {
       }
     }
   }
-  return { aiTitle, firstUser, cwd, model, toolCalls };
+  return { aiTitle, firstUser, cwd, model, usage, toolCalls };
 }
 
 /** Titre explicitement fixé par l'utilisateur (<sessionId>/custom-title.json). */
@@ -216,6 +225,7 @@ export function claudeProvider(dirOverride?: string): Provider {
             lastActivity: new Date(lastWrite),
             state: fresh || runs.some(r => r.state === 'running') ? 'running' : 'idle',
             model: p.model,
+            usage: hasUsage(p.usage) ? p.usage : undefined,
             subAgents: runs,
           });
         }

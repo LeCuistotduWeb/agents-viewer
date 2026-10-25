@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+- Session tooltip now shows token usage (input / output / cached, plus thinking when
+  present) for Claude Code and Codex, read from the transcripts already parsed — no
+  extra I/O. Gemini does not expose usage reliably, so it is omitted.
+
 ## 0.4.0
 - Reliability: Claude Code detection rewritten against the real `~/.claude` transcript
   format — titles from `custom-title.json` / `ai-title`, sub-agents from

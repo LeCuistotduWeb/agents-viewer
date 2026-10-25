@@ -47,7 +47,9 @@ write(ccc, jl(
   { type: 'assistant', requestedModel: 'claude-opus-5-5', timestamp: t(35), message: { model: 'claude-opus-5-5', content: [
     { type: 'tool_use', id: 'toolu_bg1', name: 'Agent', input: { subagent_type: 'reviewer' } },
     { type: 'tool_use', id: 'toolu_bg2', name: 'Agent', input: { subagent_type: 'backend' } },
-  ] } },
+  ], usage: { input_tokens: 10, output_tokens: 300, cache_read_input_tokens: 1000, cache_creation_input_tokens: 500, output_tokens_details: { thinking_tokens: 40 } } } },
+  { type: 'assistant', timestamp: t(34), message: { model: 'claude-opus-5-5', content: [{ type: 'text', text: 'done' }],
+    usage: { input_tokens: 5, output_tokens: 200, cache_read_input_tokens: 2000, cache_creation_input_tokens: 0, output_tokens_details: { thinking_tokens: 10 } } } },
 ));
 // Sous-agents : un background terminé, un background encore actif, un background interrompu, un foreground terminé.
 const subDir = path.join(cproj, 'ccc', 'subagents');
@@ -73,6 +75,8 @@ write(path.join(day, 'rollout-2026-10-25T10-00-00-p1.jsonl'), jl(
   { timestamp: t(87), type: 'event_msg', payload: { type: 'task_started' } },
   { timestamp: t(80), type: 'response_item', payload: { type: 'function_call', name: 'spawn_agent', call_id: 'c1', arguments: '{"agent_type":"explorer","message":"Lister les requêtes SQL"}' } },
   { timestamp: t(79), type: 'response_item', payload: { type: 'function_call_output', call_id: 'c1', output: [] } },
+  { timestamp: t(82), type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 100, output_tokens: 50, cached_input_tokens: 400 } } } },
+  { timestamp: t(78), type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 1200, output_tokens: 800, cached_input_tokens: 9000, reasoning_output_tokens: 300 } } } },
 ));
 write(path.join(day, 'rollout-2026-10-25T10-01-00-k1.jsonl'), jl(
   { timestamp: t(78), type: 'session_meta', payload: { id: 'k1', cwd: ws, source: { subagent: { thread_spawn: { parent_thread_id: 'p1', agent_role: 'explorer' } } } } },
@@ -130,6 +134,10 @@ assert.strictEqual(cReal.state, 'running'); // un sous-agent background est enco
 const states = Object.fromEntries(cReal.subAgents.map(r => [r.agentType, r.state]));
 assert.deepStrictEqual(states, { reviewer: 'done', backend: 'running', worker: 'interrupted', 'general-purpose': 'done' });
 assert.strictEqual(cReal.subAgents.find(r => r.agentType === 'backend')!.background, true);
+// usage : somme des deux messages assistant (input 15, output 500, cache 1000+500+2000, thinking 50)
+assert.deepStrictEqual(cReal.usage, { input: 15, output: 500, cacheRead: 3000, cacheCreate: 500, thinking: 50 });
+// aaa n'a pas de bloc usage → champ absent
+assert.strictEqual(cActive.usage, undefined);
 // Codex : 1 session parente, sous-agents = sessions enfants (pas listées à part)
 const cx = by('codex');
 assert.strictEqual(cx.length, 1);
@@ -137,12 +145,16 @@ assert.strictEqual(cx[0].title, 'Migrer la base vers Postgres');
 assert.strictEqual(cx[0].model, 'gpt-5.5-codex');
 assert.deepStrictEqual(cx[0].subAgents.map(r => [r.agentType, r.state, r.description]),
   [['explorer', 'running', 'Lister les requêtes SQL'], ['security', 'done', 'Auditer les migrations']]);
+// usage : dernier token_count cumulé (le second bloc), pas la somme
+assert.deepStrictEqual(cx[0].usage, { input: 1200, output: 800, cacheRead: 9000, cacheCreate: 0, thinking: 300 });
 // Gemini
 const gm = by('gemini');
 assert.strictEqual(gm.length, 2);
 assert.strictEqual(gm.find(s => s.sessionId.endsWith('g1'))!.title, 'Écrire le guide d’installation');
 assert.strictEqual(gm.find(s => s.sessionId.endsWith('g1'))!.state, 'running');
 assert.strictEqual(gm.find(s => s.sessionId.endsWith('g0'))!.state, 'idle');
+// Gemini : usage non exposé de façon fiable → jamais renseigné
+assert.strictEqual(gm.every(s => s.usage === undefined), true);
 
 // Autre workspace : rien ; scope global : tout
 assert.strictEqual(collect(buildProviders({ enabled: ['claude', 'codex', 'gemini'], dirs }), { ...ctx, workspaceDirs: ['/ailleurs'] }).sessions.length, 0);
