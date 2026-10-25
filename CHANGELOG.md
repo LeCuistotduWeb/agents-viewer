@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 (unreleased)
+## 0.4.0
 - Reliability: Claude Code detection rewritten against the real `~/.claude` transcript
   format — titles from `custom-title.json` / `ai-title`, sub-agents from
   `<session>/subagents/*.meta.json` (survive `/clear`), correct background and
